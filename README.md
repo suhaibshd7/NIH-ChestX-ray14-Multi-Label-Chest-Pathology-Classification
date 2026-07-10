@@ -1,8 +1,7 @@
 # NIH ChestX-ray14 — Multi-Label Chest Pathology Classification
 
 Multi-label classification of 14 chest pathologies from frontal chest X-rays using a
-fine-tuned ResNet-50, with Grad-CAM interpretability and honest documentation of
-dataset limitations.
+fine-tuned ResNet-18, with Grad-CAM interpretability and documented dataset limitations.
 
 ---
 
@@ -82,6 +81,11 @@ mediastinal widening, shorter focus-to-film distance. A model trained on this da
 use the film acquisition type as a proxy for disease severity rather than learning the
 pathology itself.
 
+*Status: this is currently an untested hypothesis in this project, not a verified finding.
+`View Position` (AP/PA) is a field in the dataset. Test-set AUC stratified by view
+position, for exactly the classes named above, is added in `additional_analysis.py`
+(see Reproducibility section) — results will be added here once run.*
+
 **Support apparatus:** ICU patients with life-threatening conditions routinely have
 visible ECG leads, endotracheal tubes, central venous catheters, and nasogastric tubes
 on their films. These appear systematically with the most severe diagnoses. The model
@@ -92,14 +96,23 @@ than the anatomical changes they represent.
 the model has not been tested for generalisability to different scanner manufacturers,
 kVp settings, or patient demographics.
 
-### 4. Label co-occurrence encodes clinical context
+### 4. No subgroup (fairness) analysis yet
+
+`Patient Age` and `Patient Gender` are present in the dataset and have not yet been used
+to check whether performance is uneven across subgroups. This is a known concern in
+chest X-ray AI specifically (e.g. Seyyed-Kalantari et al., "CheXclusion: Fairness Gaps
+in Deep Chest X-ray Classifiers," 2020) and is a gap in the current version of this
+project. Stratified AUC by gender and age band is added in `additional_analysis.py` —
+results will be added here once run.
+
+### 5. Label co-occurrence encodes clinical context
 
 Conditions frequently appear together in specific clinical contexts — effusion with
 consolidation, emphysema with fibrosis, edema with cardiomegaly. The model learns
 these co-occurrence statistics, which reflect real pathophysiology but also reflect the
 NIH patient population specifically. This cannot be separated in analysis.
 
-### 5. Severe class imbalance
+### 6. Severe class imbalance
 
 | Class | Count | Positive rate | pos_weight |
 |---|---|---|---|
@@ -120,82 +133,122 @@ NIH patient population specifically. This cannot be separated in analysis.
 
 Per-class `pos_weight` = neg_count / pos_count per class in the training set.
 Hernia's weight of 638.3 means a missed Hernia contributes 638× more to the loss
-than a missed negative. Rare class performance should still be treated with caution
-given only 122 training positives.
+than a missed negative. With only 122 training positives and (as shown below) no
+confidence interval yet on its test AUC, rare-class results should be treated as
+provisional, not as a settled performance number.
 
 ---
 
 ## Method
 
-- **Model:** ResNet-50 pretrained on ImageNet, final layer replaced with `nn.Linear(2048, 14)`
+- **Model:** ResNet-18 pretrained on ImageNet, final layer replaced with `nn.Linear(512, 14)`
 - **Output:** 14 independent sigmoid activations — no softmax (classes are not mutually exclusive)
 - **Loss:** `BCEWithLogitsLoss` with per-class `pos_weight` (neg_count / pos_count per class)
 - **Optimiser:** Adam, lr=1e-4
 - **Scheduler:** ReduceLROnPlateau on mean val AUC, patience=2, factor=0.5
 - **Augmentation:** RandomHorizontalFlip only — vertical flip is clinically invalid for chest X-rays
-- **Split:** Official patient-disjoint train/val/test lists provided with the dataset — Train: 77,994 images (25,208 patients) | Val: 8,530 (2,800 patients) | Test: 25,596 (2,797 patients)
+- **Split:** Official patient-disjoint train/val/test lists provided with the dataset —
+  Train: 77,994 images (25,208 patients) | Val: 8,530 (2,800 patients) | Test: 25,596 (2,797 patients)
+- **Training:** 12 epochs run, early stopping (patience=4) on val mean AUC; best checkpoint
+  at epoch 8 (val mean AUC 0.8136)
 - **Metric:** AUC-ROC per class and mean AUC — correct for severely imbalanced multi-label tasks
+
+A ResNet-50 run (`nn.Linear(2048, 14)`) is a natural next step but has not been trained —
+everything below reflects the ResNet-18 result that was actually run.
 
 ---
 
 ## Results
 
 Evaluated on the official patient-disjoint test set (25,596 images, 2,797 patients).
+Numbers below are copied directly from the notebook's own printed output — no results
+have been hand-transcribed or taken from a different run.
 
-Evaluated on the official patient-disjoint test set. Model: ResNet-18, 11 epochs, early stopping on val AUC.
-
-| Class | AUC | NIH Paper (DenseNet-121) |
+| Class | AUC | Test positives |
 |---|---|---|
-| Atelectasis | 0.7350 | 0.7003 |
-| Consolidation | 0.7236 | 0.7032 |
-| Infiltration | 0.6865 | 0.6614 |
-| Pneumothorax | 0.8512 | 0.7993 |
-| Edema | 0.8228 | 0.8052 |
-| Emphysema | 0.8948 | 0.8330 |
-| Fibrosis | 0.7898 | 0.7859 |
-| Effusion | 0.8120 | 0.7585 |
-| Pneumonia | 0.6894 | 0.6576 |
-| Pleural Thickening | 0.7471 | 0.6835 |
-| Cardiomegaly | 0.8590 | 0.8100 |
-| Nodule | 0.7006 | 0.6687 |
-| Mass | 0.7795 | 0.6933 |
-| Hernia | 0.8884 | 0.9165 |
-| **Mean AUC** | **0.7843** | **0.7451** |
+| Atelectasis | 0.7457 | — |
+| Consolidation | 0.7310 | — |
+| Infiltration | 0.6862 | — |
+| Pneumothorax | 0.8484 | — |
+| Edema | 0.8372 | — |
+| Emphysema | 0.9018 | — |
+| Fibrosis | 0.8049 | — |
+| Effusion | 0.8141 | — |
+| Pneumonia | 0.6754 | — |
+| Pleural Thickening | 0.7576 | — |
+| Cardiomegaly | 0.8703 | — |
+| Nodule | 0.6958 | — |
+| Mass | 0.7795 | — |
+| Hernia | 0.9183 | — |
+| **Mean AUC** | **0.7904** | |
 
-ResNet-18 baseline exceeds the NIH paper's DenseNet-121 results on 13 of 14 classes.
-Hernia is the exception — DenseNet-121 scores higher (0.9165 vs 0.8884), likely due
-to the larger model capacity handling the severe class imbalance (638:1) more effectively.
+*(Test-positive counts and 95% bootstrap confidence intervals per class are added by
+`additional_analysis.py` — to be filled in once run; the Hernia and Pneumonia rows in
+particular should not be read as precise until a CI is attached to them.)*
 
-**Interpreting these numbers honestly:**
-The NIH paper used a different train/val/test split procedure and evaluated on a subset
-of images with additional radiologist annotations. Direct numerical comparison is
-approximate. What matters is that the results are in the same range and that the
-per-class pattern (Infiltration and Pneumonia hardest, Emphysema and Cardiomegaly
-easiest) is consistent with published literature — confirming the pipeline is correct.
+### Comparison with published official-split results
+
+Numbers below are compiled from Xiao et al. (2022), *"Delving into Masked Autoencoders
+for Multi-Label Thorax Disease Classification,"* Table 6 (arXiv:2210.12843), which
+itself aggregates results from ~15 published papers on the same official train/test
+split used here.
+
+| Study | Year | Architecture | Mean AUC |
+|---|---|---|---|
+| Wang et al. (original ChestX-ray14 paper) | 2017 | ResNet-50 | 0.745 |
+| Yao et al. | 2018 | ResNet + DenseNet | 0.761 |
+| Guendel et al. (DNetLoc, location-aware) | 2018 | DenseNet-121 | 0.807 |
+| Baltruschat et al. | 2019 | ResNet-50 | 0.806 |
+| Liu et al. | 2022 | DenseNet-121 | 0.818 |
+| Best CNN result reported as of 2022 | 2022 | DenseNet-121 | 0.826 |
+| Xiao et al. (MAE-pretrained) | 2022 | ViT-B/16 | 0.830 |
+| **This project** | 2026 | **ResNet-18** | **0.790** |
+
+**Honest read of this table:** this project's result clears the original 2017 baseline —
+which the field has treated as an easy bar to clear for years — and sits in a reasonable
+range for a standard architecture without location-awareness, self-supervised
+pretraining, or other add-ons. It is roughly 3–4 points of mean AUC below the best
+published DenseNet-121/ViT results on this same split. That gap is expected given this
+project doesn't use any of the techniques (attention modules, location-aware losses,
+domain-specific pretraining) those papers add — it isn't a surprising or notable result
+in either direction, and shouldn't be presented as one.
 
 ---
 
 ## Grad-CAM Interpretability
 
-Grad-CAM heatmaps are generated for the highest-confidence true positive per class.
-Results fall into three groups:
+Grad-CAM heatmaps were generated for the single highest-confidence true positive per
+class. **This is a qualitative, anecdotal check (n=1 image per class), not a
+measurement** — a visual pattern here is a hypothesis about the model's behaviour, not
+a validated finding. With that caveat, the images fell into three visually distinct groups:
 
-**Valid localisation:** Cardiomegaly (cardiac silhouette), Pleural Thickening (apical
-pleural margin), Infiltration and Consolidation (mid-lower lung zones). The model
-attends to the correct anatomical regions.
+**Visually plausible localisation:** Cardiomegaly (cardiac silhouette), Pleural Thickening
+(apical pleural margin), Infiltration and Consolidation (mid-lower lung zones). The model
+appears to attend to anatomically appropriate regions in these single examples.
 
-**Shortcut learning:** Pneumothorax, Effusion, Atelectasis, Emphysema. The model
-focuses on the central mediastinum rather than the peripheral pleural space or lung
-margins. These classes disproportionately appear on portable ICU films — the model
-has learned film type and mediastinal shift as proxies for the pathology.
+**Possible shortcut learning:** Pneumothorax, Effusion, Atelectasis. The heatmap for
+these examples centres on the mediastinum rather than the peripheral pleural space or
+lung margins that define these conditions. These classes disproportionately appear on
+portable ICU films (see Limitation 3 above); one plausible explanation is that the model
+is partly using film-acquisition cues as a proxy rather than the pathology itself — but
+this has not been tested, only observed on single images.
 
-**Poor localisation:** Nodule, Mass, Pneumonia. Broad diffuse activation rather than
-the focal, circumscribed heatmaps these conditions require. Insufficient training
-examples for rare, subtle findings.
+**Poor localisation:** Nodule, Mass, Pneumonia. Broad, diffuse activation rather than the
+focal, circumscribed heatmap these conditions should produce, plausibly reflecting the
+smaller number of training examples for these classes.
 
-This pattern — high AUC despite incorrect localisation — is a known property of
-ChestX-ray14 and was documented by Oakden-Rayner (2017):
+This general pattern — high AUC despite imperfect localisation — is a documented property
+of ChestX-ray14, discussed by Oakden-Rayner (2017):
 https://lukeoakdenrayner.wordpress.com/2017/12/18/the-chestxray14-dataset-problems/
+
+**Planned upgrade, not yet done:** NIH released ~880 ground-truth bounding boxes across
+8 of the 14 classes specifically for evaluating localisation. `additional_analysis.py`
+adds code to threshold each Grad-CAM heatmap, extract a bounding box, and compute
+IoU / AP@0.25 / AP@0.50 against these ground-truth boxes for every test image that has
+one — turning the n=1 impression above into an actual number per class. Results will be
+added here once run. (Methodology follows the same box-extraction approach as Xiao et al.
+2022, Table 7, who report this exact metric for DenseNet-121 and ViT-S/16 on this dataset,
+for reference.)
 
 ---
 
@@ -209,6 +262,7 @@ torchvision==0.15.0
 numpy==1.24.0
 pandas==2.0.0
 scikit-learn==1.2.0
+scipy==1.10.0
 matplotlib==3.7.0
 seaborn==0.12.0
 Pillow==9.5.0
@@ -219,5 +273,11 @@ grad-cam==1.4.8
 
 1. Add the [NIH ChestX-ray14 dataset](https://www.kaggle.com/datasets/khanfashee/nih-chest-x-ray-14-224x224-resized) to your Kaggle notebook
 2. Set `MINI_RUN = True` in Cell 2 for a 2-minute pipeline test
-3. Set `MINI_RUN = False` and swap `resnet18` → `resnet50` in Cell 13 for the full run
+3. Set `MINI_RUN = False` for the full run (ResNet-18, as reported above)
 4. Run all cells top to bottom
+5. Append the cells from `additional_analysis.py` for bootstrap CIs, subgroup AUC,
+   view-position stratification, and quantitative Grad-CAM localisation
+
+**Note on portability:** the notebook currently hardcodes `/kaggle/input/...` paths and
+will not run outside Kaggle without editing `BASE` in Cell 2. `additional_analysis.py`
+includes a path fix for this.
