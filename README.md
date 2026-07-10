@@ -149,8 +149,8 @@ provisional, not as a settled performance number.
 - **Augmentation:** RandomHorizontalFlip only — vertical flip is clinically invalid for chest X-rays
 - **Split:** Official patient-disjoint train/val/test lists provided with the dataset —
   Train: 77,994 images (25,208 patients) | Val: 8,530 (2,800 patients) | Test: 25,596 (2,797 patients)
-- **Training:** 12 epochs run, early stopping (patience=4) on val mean AUC; best checkpoint
-  at epoch 8 (val mean AUC 0.8136)
+- **Training:** 10 epochs run, early stopping (patience=4) on val mean AUC; best checkpoint
+  at epoch 6 (val mean AUC 0.8166)
 - **Metric:** AUC-ROC per class and mean AUC — correct for severely imbalanced multi-label tasks
 
 A ResNet-50 run (`nn.Linear(2048, 14)`) is a natural next step but has not been trained —
@@ -166,21 +166,21 @@ have been hand-transcribed or taken from a different run.
 
 | Class | AUC | Test positives |
 |---|---|---|
-| Atelectasis | 0.7457 | — |
-| Consolidation | 0.7310 | — |
-| Infiltration | 0.6862 | — |
-| Pneumothorax | 0.8484 | — |
-| Edema | 0.8372 | — |
-| Emphysema | 0.9018 | — |
-| Fibrosis | 0.8049 | — |
-| Effusion | 0.8141 | — |
-| Pneumonia | 0.6754 | — |
-| Pleural Thickening | 0.7576 | — |
-| Cardiomegaly | 0.8703 | — |
-| Nodule | 0.6958 | — |
-| Mass | 0.7795 | — |
-| Hernia | 0.9183 | — |
-| **Mean AUC** | **0.7904** | |
+| Atelectasis | 0.7453 | — |
+| Consolidation | 0.7161 | — |
+| Infiltration | 0.6919 | — |
+| Pneumothorax | 0.8398 | — |
+| Edema | 0.8388 | — |
+| Emphysema | 0.8768 | — |
+| Fibrosis | 0.8010 | — |
+| Effusion | 0.8091 | — |
+| Pneumonia | 0.6884 | — |
+| Pleural Thickening | 0.7564 | — |
+| Cardiomegaly | 0.8726 | — |
+| Nodule | 0.7088 | — |
+| Mass | 0.7831 | — |
+| Hernia | 0.9213 | — |
+| **Mean AUC** | **0.7892** | |
 
 *(Test-positive counts and 95% bootstrap confidence intervals per class are added by
 `additional_analysis.py` — to be filled in once run; the Hernia and Pneumonia rows in
@@ -202,7 +202,7 @@ split used here.
 | Liu et al. | 2022 | DenseNet-121 | 0.818 |
 | Best CNN result reported as of 2022 | 2022 | DenseNet-121 | 0.826 |
 | Xiao et al. (MAE-pretrained) | 2022 | ViT-B/16 | 0.830 |
-| **This project** | 2026 | **ResNet-18** | **0.790** |
+| **This project** | 2026 | **ResNet-18** | **0.789** |
 
 **Honest read of this table:** this project's result clears the original 2017 baseline —
 which the field has treated as an easy bar to clear for years — and sits in a reasonable
@@ -276,7 +276,7 @@ grad-cam==1.4.8
 3. Set `MINI_RUN = False` for the full run (ResNet-18, as reported above)
 4. Run all cells top to bottom
 5. Append the cells from `additional_analysis.py` for bootstrap CIs, subgroup AUC,
-   view-position stratification, and quantitative Grad-CAM localisation
+    view-position stratification, and quantitative Grad-CAM localisation
 
 **Note on portability:** the notebook currently hardcodes `/kaggle/input/...` paths and
 will not run outside Kaggle without editing `BASE` in Cell 2. `additional_analysis.py`
