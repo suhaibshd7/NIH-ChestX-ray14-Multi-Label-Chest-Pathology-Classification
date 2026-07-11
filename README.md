@@ -26,7 +26,7 @@ single class. This is fundamentally different from standard image classification
 | 7 | Fibrosis | Scarring of lung tissue — reduced compliance, honeycombing pattern |
 | 8 | Effusion | Fluid accumulation in the pleural space around the lung |
 | 9 | Pneumonia | Lung infection — lobar or patchy consolidation |
-| 10 | Pleural Thickening | Thickening of the pleural membrane — often post-inflammatory |
+| 10 | Pleural_Thickening | Thickening of the pleural membrane — often post-inflammatory |
 | 11 | Cardiomegaly | Enlarged cardiac silhouette — cardiothoracic ratio >0.5 |
 | 12 | Nodule | Small rounded opacity ≤3cm — may be benign or malignant |
 | 13 | Mass | Larger rounded opacity >3cm — higher malignancy concern |
@@ -114,7 +114,7 @@ NIH patient population specifically. This cannot be separated in analysis.
 
 ### 6. Severe class imbalance
 
-| Class | Count | Positive rate | pos_weight |
+| Class | Global Count | Positive rate | pos_weight (Train Set) |
 |---|---|---|---|
 | Infiltration | 19,870 | 17.7% | 5.2 |
 | Effusion | 13,307 | 11.9% | 8.9 |
@@ -123,7 +123,7 @@ NIH patient population specifically. This cannot be separated in analysis.
 | Mass | 5,746 | 5.1% | 20.4 |
 | Pneumothorax | 5,298 | 4.7% | 31.6 |
 | Consolidation | 4,667 | 4.2% | 29.2 |
-| Pleural Thickening | 3,385 | 3.0% | 38.1 |
+| Pleural_Thickening | 3,385 | 3.0% | 38.1 |
 | Cardiomegaly | 2,772 | 2.5% | 49.4 |
 | Emphysema | 2,516 | 2.2% | 58.2 |
 | Edema | 2,303 | 2.0% | 61.2 |
@@ -131,11 +131,8 @@ NIH patient population specifically. This cannot be separated in analysis.
 | Pneumonia | 1,353 | 1.2% | 98.6 |
 | Hernia | 227 | 0.2% | 638.3 |
 
-Per-class `pos_weight` = neg_count / pos_count per class in the training set.
-Hernia's weight of 638.3 means a missed Hernia contributes 638× more to the loss
-than a missed negative. With only 122 training positives and (as shown below) no
-confidence interval yet on its test AUC, rare-class results should be treated as
-provisional, not as a settled performance number.
+Per-class `pos_weight` = neg_count / pos_count calculated explicitly within the training set partition. 
+Hernia's weight of 638.3 means a missed Hernia contributes 638× more to the loss than a missed negative. With only 122 training positives in the active split and no confidence interval yet on its test AUC, rare-class results should be treated as provisional, not as a settled performance number.
 
 ---
 
@@ -149,12 +146,10 @@ provisional, not as a settled performance number.
 - **Augmentation:** RandomHorizontalFlip only — vertical flip is clinically invalid for chest X-rays
 - **Split:** Official patient-disjoint train/val/test lists provided with the dataset —
   Train: 77,994 images (25,208 patients) | Val: 8,530 (2,800 patients) | Test: 25,596 (2,797 patients)
-- **Training:** 10 epochs run, early stopping (patience=4) on val mean AUC; best checkpoint
-  at epoch 6 (val mean AUC 0.8166)
+- **Training:** Up to 20 epochs configured, with early stopping (patience=4) tracking validation mean AUC. The optimal checkpoint was reached at **Epoch 7** (val mean AUC 0.8138), with early stopping breaking execution at **Epoch 11**.
 - **Metric:** AUC-ROC per class and mean AUC — correct for severely imbalanced multi-label tasks
 
-A ResNet-50 run (`nn.Linear(2048, 14)`) is a natural next step but has not been trained —
-everything below reflects the ResNet-18 result that was actually run.
+A ResNet-50 run (`nn.Linear(2048, 14)`) is a natural next step but has not been trained — everything below reflects the ResNet-18 result that was actually run.
 
 ---
 
@@ -166,21 +161,21 @@ have been hand-transcribed or taken from a different run.
 
 | Class | AUC | Test positives |
 |---|---|---|
-| Atelectasis | 0.7453 | — |
-| Consolidation | 0.7161 | — |
-| Infiltration | 0.6919 | — |
-| Pneumothorax | 0.8398 | — |
-| Edema | 0.8388 | — |
-| Emphysema | 0.8768 | — |
-| Fibrosis | 0.8010 | — |
-| Effusion | 0.8091 | — |
-| Pneumonia | 0.6884 | — |
-| Pleural Thickening | 0.7564 | — |
-| Cardiomegaly | 0.8726 | — |
-| Nodule | 0.7088 | — |
-| Mass | 0.7831 | — |
-| Hernia | 0.9213 | — |
-| **Mean AUC** | **0.7892** | |
+| Atelectasis | 0.7486 | — |
+| Consolidation | 0.7246 | — |
+| Infiltration | 0.6883 | — |
+| Pneumothorax | 0.8452 | — |
+| Edema | 0.8303 | — |
+| Emphysema | 0.8988 | — |
+| Fibrosis | 0.7798 | — |
+| Effusion | 0.8150 | — |
+| Pneumonia | 0.6982 | — |
+| Pleural_Thickening | 0.7536 | — |
+| Cardiomegaly | 0.8781 | — |
+| Nodule | 0.7163 | — |
+| Mass | 0.7814 | — |
+| Hernia | 0.9029 | — |
+| **Mean AUC** | **0.7901** | |
 
 *(Test-positive counts and 95% bootstrap confidence intervals per class are added by
 `additional_analysis.py` — to be filled in once run; the Hernia and Pneumonia rows in
@@ -202,7 +197,7 @@ split used here.
 | Liu et al. | 2022 | DenseNet-121 | 0.818 |
 | Best CNN result reported as of 2022 | 2022 | DenseNet-121 | 0.826 |
 | Xiao et al. (MAE-pretrained) | 2022 | ViT-B/16 | 0.830 |
-| **This project** | 2026 | **ResNet-18** | **0.789** |
+| **This project** | 2026 | **ResNet-18** | **0.790** |
 
 **Honest read of this table:** this project's result clears the original 2017 baseline —
 which the field has treated as an easy bar to clear for years — and sits in a reasonable
@@ -222,7 +217,7 @@ class. **This is a qualitative, anecdotal check (n=1 image per class), not a
 measurement** — a visual pattern here is a hypothesis about the model's behaviour, not
 a validated finding. With that caveat, the images fell into three visually distinct groups:
 
-**Visually plausible localisation:** Cardiomegaly (cardiac silhouette), Pleural Thickening
+**Visually plausible localisation:** Cardiomegaly (cardiac silhouette), Pleural_Thickening
 (apical pleural margin), Infiltration and Consolidation (mid-lower lung zones). The model
 appears to attend to anatomically appropriate regions in these single examples.
 
@@ -255,29 +250,3 @@ for reference.)
 ## Requirements
 
 Python 3.10
-
-```
-torch==2.0.0
-torchvision==0.15.0
-numpy==1.24.0
-pandas==2.0.0
-scikit-learn==1.2.0
-scipy==1.10.0
-matplotlib==3.7.0
-seaborn==0.12.0
-Pillow==9.5.0
-grad-cam==1.4.8
-```
-
-## How to Run
-
-1. Add the [NIH ChestX-ray14 dataset](https://www.kaggle.com/datasets/khanfashee/nih-chest-x-ray-14-224x224-resized) to your Kaggle notebook
-2. Set `MINI_RUN = True` in Cell 2 for a 2-minute pipeline test
-3. Set `MINI_RUN = False` for the full run (ResNet-18, as reported above)
-4. Run all cells top to bottom
-5. Append the cells from `additional_analysis.py` for bootstrap CIs, subgroup AUC,
-    view-position stratification, and quantitative Grad-CAM localisation
-
-**Note on portability:** the notebook currently hardcodes `/kaggle/input/...` paths and
-will not run outside Kaggle without editing `BASE` in Cell 2. `additional_analysis.py`
-includes a path fix for this.
