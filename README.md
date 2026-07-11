@@ -95,10 +95,8 @@ isn't it.
 
 One class did show a large gap in the full 14-class breakdown: Cardiomegaly (AP 0.8361 vs
 PA 0.9293, a −0.093 gap — the largest of any class).
-*[Note for author: this is a natural place to add your own clinical read — e.g. whether
-cardiothoracic ratio assessment is only considered reliable on PA views due to
-magnification differences between AP and PA acquisition, which would make this a real
-clinical effect rather than a model artifact.]*
+
+Cardiomegaly's large AP/PA gap likely reflects standard radiographic positioning effects rather than a model failure. AP views magnify the cardiac silhouette because the heart sits farther from the detector and the beam is more divergent at the shorter distances typical of portable acquisition — which is why CTR is clinically only considered reliable on PA films. The magnification isn't fixed, though: it varies with acquisition distance and is compounded by motion, rotation, and overlying support lines common on portable ICU films. That inconsistency, more than the average magnification itself, is the more likely driver of reduced ranking performance (AUC) on AP specifically.
 
 **Support apparatus:** ICU patients with life-threatening conditions routinely have
 visible ECG leads, endotracheal tubes, central venous catheters, and nasogastric tubes
