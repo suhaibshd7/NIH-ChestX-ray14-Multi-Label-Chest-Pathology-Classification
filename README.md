@@ -89,14 +89,15 @@ pathology itself. Test-set AUC stratified by `View Position`:
 
 If acquisition type were inflating these three classes' AUC, the gap should be clearly
 positive (AP scoring higher). It's flat-to-negative for all three — PA is equal or better
-in every case. **The hypothesis as originally stated is not supported by this data.** That
-doesn't rule out shortcut learning through some other mechanism, but this specific one
-isn't it.
+in every case. **This hypothesis is not supported by the data.** That doesn't rule out
+shortcut learning through some other mechanism, but this specific one isn't it.
 
 One class did show a large gap in the full 14-class breakdown: Cardiomegaly (AP 0.8361 vs
 PA 0.9293, a −0.093 gap — the largest of any class).
-
-Cardiomegaly's large AP/PA gap likely reflects standard radiographic positioning effects rather than a model failure. AP views magnify the cardiac silhouette because the heart sits farther from the detector and the beam is more divergent at the shorter distances typical of portable acquisition — which is why CTR is clinically only considered reliable on PA films. The magnification isn't fixed, though: it varies with acquisition distance and is compounded by motion, rotation, and overlying support lines common on portable ICU films. That inconsistency, more than the average magnification itself, is the more likely driver of reduced ranking performance (AUC) on AP specifically.
+*[Note for author: this is a natural place to add your own clinical read — e.g. whether
+cardiothoracic ratio assessment is only considered reliable on PA views due to
+magnification differences between AP and PA acquisition, which would make this a real
+clinical effect rather than a model artifact.]*
 
 **Support apparatus:** ICU patients with life-threatening conditions routinely have
 visible ECG leads, endotracheal tubes, central venous catheters, and nasogastric tubes
@@ -138,13 +139,11 @@ computed on the subgroup estimates specifically, which hasn't been done.
 | Pleural_Thickening | 0.7822 | 0.7567 | 0.7094 |
 | *(remaining 11 classes)* | | | within ~0.03 across bands |
 
-**Hernia's `<40` value (0.2185) is excluded from interpretation.** It is not a fairness
-finding — Hernia has only 86 test-set positives total across all ages, and whatever
-fraction lands in the youngest band is almost certainly a handful of cases at most,
-where AUC is dominated by one or two hard examples rather than measuring anything
-stable. Reporting this number without that context would be misleading; it's flagged
-here specifically so it doesn't get pasted into a slide deck and misread as a real
-19x performance gap.
+**Hernia's `<40` value (0.2185) is not a fairness finding.** Hernia has only 86
+test-set positives total across all ages, and whatever fraction lands in the
+youngest band is almost certainly a handful of cases at most, where AUC is
+dominated by one or two hard examples rather than measuring anything stable.
+It should not be read as a genuine 19x performance gap between age groups.
 
 ### 5. Label co-occurrence encodes clinical context
 
@@ -197,6 +196,33 @@ the loss than a missed negative.
 A ResNet-50 run (`nn.Linear(2048, 14)`) is a natural next step but has not been trained —
 everything below reflects the ResNet-18 result that was actually run.
 
+### Training dynamics — not fully resolved
+
+Train loss fell from 0.811 (epoch 7, the checkpoint kept) to 0.559 (epoch 11) while val
+mean AUC did not improve over that span: 0.8138 → 0.7919 → 0.8128 → 0.8055 → 0.8046, net
+negative. That's a genuine, if mild, overfitting signature — the model kept fitting the
+training set after it stopped finding anything generalizable in validation. Early stopping
+mechanically kept the epoch-7 checkpoint, but nothing here actively addressed the pattern:
+no weight decay, no dropout, no additional augmentation was tried to see whether the gap
+could be narrowed.
+
+There's a second problem underneath the first. Epochs 5, 6, 7, and 9 scored 0.8117,
+0.8135, 0.8138, 0.8128 — a spread of 0.0021 across four epochs. The improvement that
+caused epoch 7 to be saved over epoch 6 was 0.0003. Epoch 8 dipped to 0.7919 — about
+0.02 below its neighbours — and fully recovered by epoch 9. That pattern (single-epoch
+swings larger than the margin deciding which checkpoint gets kept) means epoch 7 is not
+demonstrably a stable optimum; it's the highest draw from a plateau of roughly
+equivalent checkpoints, evaluated once each on a single fixed validation set with no
+uncertainty attached. The same reasoning that motivated bootstrap CIs on the test AUC
+below applies here and hasn't been applied.
+
+What this would take to resolve: model selection based on a smoothed multi-epoch average
+or a minimum-improvement threshold rather than a single-epoch maximum; weight decay
+and/or dropout to test whether the train/val gap narrows; and, ideally, repeating training
+across a few different train/val splits to see whether "epoch 7, ~0.814 mean val AUC"
+holds up or was specific to this one split. None of that has been done. The result below
+should be read as a reasonable ResNet-18 baseline, not a tuned optimum.
+
 ---
 
 ## Results
@@ -244,7 +270,7 @@ split used here.
 | Xiao et al. (MAE-pretrained) | 2022 | ViT-B/16 | 0.830 |
 | **This project** | 2026 | **ResNet-18** | **0.790** |
 
-**Honest read of this table:** this project's result clears the original 2017 baseline —
+**Interpretation:** this project's result clears the original 2017 baseline —
 which the field has treated as an easy bar to clear for years — and sits in a reasonable
 range for a standard architecture without location-awareness, self-supervised
 pretraining, or other add-ons. It is roughly 3–4 points of mean AUC below the best
@@ -284,18 +310,38 @@ Reading this: Cardiomegaly is genuinely strong. Everything else the model does a
 moderately (Infiltration, Pneumonia, Mass — roughly one in three) and at worst close to
 chance for a small target region (Nodule).
 
-One caveat on the Cardiomegaly number specifically: pointing game is known to favour
-centrally-located pathology, and Grad-CAM heatmaps have a documented tendency toward
-central activation regardless of the true lesion. The heart occupies the middle of
-essentially every chest film, so some of this 92.5% may reflect coincidental spatial
+Two separate reasons not to take that ranking at face value yet.
+
+First, specific to Cardiomegaly: Grad-CAM heatmaps have a documented tendency toward
+central activation regardless of the true lesion, and the heart occupies the middle of
+essentially every chest film. Some of the 92.5% may reflect this coincidental spatial
 alignment rather than the model precisely reasoning about cardiac silhouette. It's the
 strongest result here either way, but "strongest" and "fully explained" aren't the
 same claim.
 
-An earlier n=1-per-class qualitative pass had put Infiltration in a "valid localisation"
-bucket alongside Cardiomegaly, based on a single lucky image. The measured result (38.2%
-across 123 images) doesn't support that — this is exactly the kind of false impression
-the quantitative check exists to catch.
+**A more general version of that caveat applies across all 8 classes, not just Cardiomegaly.**
+Pointing game's "chance" hit rate scales with box size relative to image area — a larger
+ground-truth box is easier to hit by construction, regardless of whether the model is
+reasoning about the pathology at all. Cardiomegaly boxes cover a large share of the
+cardiac silhouette; Nodule boxes, by clinical definition ≤3cm, cover very little of a
+full chest film. Nodule being both the smallest-boxed class and the worst score, and
+Cardiomegaly both the largest-boxed and the best, is at least consistent with box size
+doing some of the work here — though the middle of the ranking doesn't track size as
+cleanly, so it isn't a clean confound end to end.
+
+**This hasn't been checked.** The exact ground-truth box dimensions for every test-set
+instance are already present in the data (`bbox_test`'s box coordinates), which would
+give the true chance rate directly — no need to lean on published population-average
+lesion sizes. That comparison (observed pointing-game accuracy against each class's
+mean box-area-to-image-area ratio, i.e. a "lift over chance" figure) hasn't been run.
+Until it is, the ranking above should be read as raw pointing-game accuracy, not as a
+validated statement that Cardiomegaly localizes well and Nodule doesn't — box size alone
+could explain a meaningful part of that gap.
+
+Infiltration's measured pointing-game accuracy (38.2% across 123 images) is moderate,
+not strong. A single qualitative example is not a reliable basis for judging
+localisation quality — this is exactly why the measured, multi-image result is the
+one to trust.
 
 ### Unmeasured (6 classes, no ground-truth boxes available)
 
