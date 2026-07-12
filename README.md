@@ -7,7 +7,7 @@ checked quantitatively against NIH's ground-truth bounding boxes, and two execut
 ablations demonstrating why the patient-disjoint split and per-class loss weighting
 matter — not just asserting that they do.
 
-Full pipeline: [`chestxray14_pipeline.ipynb`](./chestxray14_pipeline.ipynb)
+Full pipeline: [`chestx-ray14.ipynb`](./chestx-ray14.ipynb)
 
 ---
 
