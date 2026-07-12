@@ -1,9 +1,13 @@
 # NIH ChestX-ray14 — Multi-Label Chest Pathology Classification
 
 Multi-label classification of 14 chest pathologies from frontal chest X-rays using a
-fine-tuned ResNet-18, validated with bootstrap confidence intervals, subgroup (gender/age)
-breakdowns, a tested acquisition-bias hypothesis, and Grad-CAM interpretability checked
-quantitatively against NIH's ground-truth bounding boxes.
+fine-tuned ResNet-18. Validated with bootstrap confidence intervals, a gender/age
+subgroup breakdown, a tested acquisition-bias hypothesis, Grad-CAM interpretability
+checked quantitatively against NIH's ground-truth bounding boxes, and two executed
+ablations demonstrating why the patient-disjoint split and per-class loss weighting
+matter — not just asserting that they do.
+
+Full pipeline: [`chestxray14_pipeline.ipynb`](./chestxray14_pipeline.ipynb)
 
 ---
 
@@ -11,7 +15,7 @@ quantitatively against NIH's ground-truth bounding boxes.
 
 Each chest X-ray is labelled with zero, one, or multiple pathologies simultaneously.
 The model outputs 14 independent probabilities — one per condition — rather than a
-single class. This is fundamentally different from standard image classification.
+single class, which is why it uses 14 sigmoids rather than a softmax.
 
 ---
 
@@ -38,123 +42,100 @@ single class. This is fundamentally different from standard image classification
 
 ## Dataset
 
-**NIH ChestX-ray14**
-112,120 frontal-view chest X-ray images from 30,805 unique patients at the NIH Clinical Center.
+**NIH ChestX-ray14** — 112,120 frontal-view chest X-rays from 30,805 unique patients
+at the NIH Clinical Center.
 
 > Wang X, Peng Y, Lu L, Lu Z, Bagheri M, Summers RM. ChestX-ray8: Hospital-scale
 > Chest X-ray Database and Benchmarks on Weakly-Supervised Classification and
 > Localization of Common Thorax Diseases. IEEE CVPR 2017.
 > https://arxiv.org/abs/1705.02315
 
-Kaggle (pre-resized 224×224): https://www.kaggle.com/datasets/khanfashee/nih-chest-x-ray-14-224x224-resized
+Used here: [pre-resized 224×224 Kaggle mirror](https://www.kaggle.com/datasets/khanfashee/nih-chest-x-ray-14-224x224-resized).
+
+**Note on provenance:** this is a third-party re-upload, resized by a pipeline that
+isn't documented. It is not the official NIH 1024×1024 release. This affects exact
+reproducibility and comparability with papers that resize from native resolution
+themselves — see the literature comparison table below.
 
 ---
 
 ## Dataset Limitations — Read Before Interpreting Results
 
-These are not minor caveats. They fundamentally affect what this model can and cannot do.
+**Labels are NLP-extracted, not radiologist-confirmed.** They were pulled from
+radiology report text automatically, not assigned by a radiologist reviewing the
+image. Estimated label accuracy is >90%, meaning up to 1 in 10 labels may be wrong.
+The original reports aren't public, so errors can't be audited. This is standard
+practice for this dataset (weak supervision), but it caps how much signal any model
+trained on it can extract.
 
-### 1. Labels are NLP-generated, not radiologist-confirmed
+**"No Finding" ≠ healthy.** It means the NLP found none of the 14 target conditions
+in the report — not that the patient has no pathology at all. 53.9% of images carry
+this label.
 
-Labels were extracted automatically from radiology report text using Natural Language
-Processing — not by radiologists manually reviewing images. Estimated accuracy is >90%,
-meaning up to 10% of labels may be incorrect. This is called **weakly supervised learning**.
-The model is trained on imperfect ground truth and results must be interpreted accordingly.
+**Single hospital — systematic confounding risk.** All images are from one
+institution (NIH Clinical Center, Bethesda). Two specific concerns, one tested:
 
-The original radiology reports are not publicly available, so label errors cannot be
-audited or corrected.
-
-### 2. "No Finding" does not mean healthy
-
-"No Finding" means the NLP found none of the 14 target conditions mentioned in the
-report — not that the patient is free of disease. The patient may have other pathologies
-outside the 14-class vocabulary, or findings the radiologist noted but the NLP missed.
-In this dataset, 53.9% of images are labelled "No Finding".
-
-### 3. Single hospital — systematic confounding bias
-
-All images come from one institution: the NIH Clinical Center in Bethesda, Maryland.
-
-**Portable AP vs standard PA films — tested, not supported for the hypothesised classes.**
-The original concern: severe pathologies (pneumothorax, effusion, edema) disproportionately
-appear on portable AP films taken at the bedside for critically ill patients, so the model
-could be using film-acquisition type as a proxy for disease severity rather than the
-pathology itself. Test-set AUC stratified by `View Position`:
+*Acquisition type (portable AP vs. standard PA).* The concern: severe pathologies
+(pneumothorax, effusion, edema) disproportionately appear on portable AP films taken
+bedside for critically ill patients, so the model could be using acquisition type as
+a severity proxy rather than the pathology itself. Tested directly — test AUC
+stratified by `View Position`:
 
 | Class | AP | PA | Gap (AP−PA) |
 |---|---|---|---|
-| Pneumothorax | 0.8332 | 0.8441 | −0.0109 |
-| Effusion | 0.7858 | 0.8493 | −0.0635 |
-| Atelectasis | 0.7415 | 0.7581 | −0.0166 |
+| Pneumothorax | 0.8127 | 0.8399 | −0.0272 |
+| Effusion | 0.7832 | 0.8476 | −0.0643 |
+| Atelectasis | 0.7415 | 0.7608 | −0.0194 |
 
-If acquisition type were inflating these three classes' AUC, the gap should be clearly
-positive (AP scoring higher). It's flat-to-negative for all three — PA is equal or better
-in every case. **This hypothesis is not supported by the data.** That doesn't rule out
-shortcut learning through some other mechanism, but this specific one isn't it.
+If acquisition type were inflating these three classes, the gap should be clearly
+positive (AP scoring higher). It's negative for all three — PA does equal or better
+in every case. **This specific hypothesis is not supported.** That doesn't rule out
+shortcut learning through some other mechanism, but this one isn't it.
 
-One class did show a large gap in the full 14-class breakdown: Cardiomegaly (AP 0.8361 vs
-PA 0.9293, a −0.093 gap — the largest of any class).
-*[Note for author: this is a natural place to add your own clinical read — e.g. whether
-cardiothoracic ratio assessment is only considered reliable on PA views due to
-magnification differences between AP and PA acquisition, which would make this a real
-clinical effect rather than a model artifact.]*
+One class *did* show a large gap in the full 14-class breakdown: Cardiomegaly (AP
+0.8361 vs. PA 0.9293, a −0.093 gap, the largest of any class). **Clinical read:** this
+is plausibly a known limitation of AP films rather than a model artifact.
+Cardiothoracic ratio — the standard criterion for cardiomegaly — is validated for PA
+views taken at a standardized distance. AP views (typically portable bedside films)
+place the heart closer to the X-ray source, causing variable magnification of the
+cardiac silhouette, so the ground-truth labels themselves are noisier on AP films.
+A noisier label signal would lower measured AUC regardless of what the model is doing
+internally. Consistent with the observed gap, not proof of it.
 
-**Support apparatus:** ICU patients with life-threatening conditions routinely have
-visible ECG leads, endotracheal tubes, central venous catheters, and nasogastric tubes
-on their films. These appear systematically with the most severe diagnoses. The model
-may learn to associate the presence of lines and tubes with specific pathologies rather
-than the anatomical changes they represent. (Not directly tested here — `View Position`
-was a usable proxy for acquisition context; the presence of support apparatus itself
-isn't a field in this dataset.)
+*Support apparatus* (ECG leads, tubes, catheters — common on the sickest patients'
+films) is a plausible second confound but wasn't directly tested; it isn't a field in
+this dataset, and `View Position` was the available proxy for acquisition context.
 
-**Single scanner protocol:** Consistent imaging protocols across one institution mean
-the model has not been tested for generalisability to different scanner manufacturers,
-kVp settings, or patient demographics.
+*Single scanner protocol* means generalizability to other institutions, scanners, or
+demographics is untested — see Ablation/Results caveats below.
 
-### 4. Subgroup performance — gender and age
-
-**Gender.** Test AUC by `Patient Gender`, sorted by largest absolute gap:
+**Subgroup performance.** Test AUC by gender and age band, largest gaps first:
 
 | Class | F | M | Gap (M−F) |
 |---|---|---|---|
-| Hernia | 0.9279 | 0.8762 | −0.0517 |
-| Fibrosis | 0.7516 | 0.8013 | +0.0497 |
-| Nodule | 0.7435 | 0.6962 | −0.0473 |
-| Effusion | 0.7994 | 0.8255 | +0.0261 |
-| Pleural_Thickening | 0.7665 | 0.7438 | −0.0227 |
-| *(remaining 9 classes)* | | | ≤ 0.022 |
+| Fibrosis | 0.7589 | 0.8388 | +0.0799 |
+| Hernia | 0.9568 | 0.8768 | −0.0800 |
+| Nodule | 0.7379 | 0.6994 | −0.0385 |
+| Effusion | 0.7943 | 0.8221 | +0.0278 |
+| *(remaining 10 classes)* | | | ≤ 0.018 |
 
-No individual-class gap has a confidence interval attached, and the bootstrap CI widths
-on the full test set (Results section below) run 0.014–0.08 depending on class — so gaps
-in the 0.02–0.05 range here are plausibly within normal sampling noise rather than a real
-disparity. Nothing here should be read as a confirmed fairness finding without a CI
-computed on the subgroup estimates specifically, which hasn't been done.
+No per-subgroup confidence interval is computed. Bootstrap CI widths on the full test
+set (see Results) run 0.013–0.08 depending on class, so most gaps here are plausibly
+within normal sampling noise rather than a confirmed disparity — descriptive, not a
+fairness finding.
 
-**Age.** Test AUC by age band (`<40` / `40-60` / `60+`):
+Age band (`<40` / `40-60` / `60+`) shows a similar pattern, with one artifact worth
+flagging explicitly: Hernia's `<40` AUC (0.5036) is not a real effect — this band has
+very few Hernia-positive test cases, and AUC on a handful of examples is dominated by
+one or two hard cases rather than measuring anything stable.
 
-| Class | <40 | 40-60 | 60+ |
-|---|---|---|---|
-| Cardiomegaly | 0.8727 | 0.8931 | 0.8522 |
-| Pneumonia | 0.7139 | 0.6674 | 0.7254 |
-| Pleural_Thickening | 0.7822 | 0.7567 | 0.7094 |
-| *(remaining 11 classes)* | | | within ~0.03 across bands |
+**Label co-occurrence** reflects real clinical patterns (effusion with consolidation,
+edema with cardiomegaly) but also reflects this specific patient population — not
+separable from the model's raw performance.
 
-**Hernia's `<40` value (0.2185) is not a fairness finding.** Hernia has only 86
-test-set positives total across all ages, and whatever fraction lands in the
-youngest band is almost certainly a handful of cases at most, where AUC is
-dominated by one or two hard examples rather than measuring anything stable.
-It should not be read as a genuine 19x performance gap between age groups.
+**Severe class imbalance:**
 
-### 5. Label co-occurrence encodes clinical context
-
-Conditions frequently appear together in specific clinical contexts — effusion with
-consolidation, emphysema with fibrosis, edema with cardiomegaly. The model learns
-these co-occurrence statistics, which reflect real pathophysiology but also reflect the
-NIH patient population specifically. This cannot be separated in analysis.
-
-### 6. Severe class imbalance
-
-| Class | Global Count | Positive rate | pos_weight (Train Set) |
+| Class | Count | Rate | pos_weight |
 |---|---|---|---|
 | Infiltration | 19,870 | 17.7% | 5.2 |
 | Effusion | 13,307 | 11.9% | 8.9 |
@@ -171,188 +152,187 @@ NIH patient population specifically. This cannot be separated in analysis.
 | Pneumonia | 1,353 | 1.2% | 98.6 |
 | Hernia | 227 | 0.2% | 638.3 |
 
-Per-class `pos_weight` = neg_count / pos_count calculated explicitly within the training
-set partition. Hernia's weight of 638.3 means a missed Hernia contributes 638× more to
-the loss than a missed negative.
+`pos_weight` = neg_count / pos_count, computed on the train split only. Ablation B
+below tests what happens if you skip this.
 
 ---
 
 ## Method
 
-- **Model:** ResNet-18 pretrained on ImageNet, final layer replaced with `nn.Linear(512, 14)`
-- **Output:** 14 independent sigmoid activations — no softmax (classes are not mutually exclusive)
-- **Loss:** `BCEWithLogitsLoss` with per-class `pos_weight` (neg_count / pos_count per class)
-- **Optimiser:** Adam, lr=1e-4
-- **Scheduler:** ReduceLROnPlateau on mean val AUC, patience=2, factor=0.5
-- **Augmentation:** RandomHorizontalFlip only — vertical flip is clinically invalid for chest X-rays
-- **Split:** Official patient-disjoint train/val/test lists provided with the dataset —
-  Train: 77,994 images (25,208 patients) | Val: 8,530 (2,800 patients) | Test: 25,596 (2,797 patients)
-- **Training:** Up to 20 epochs configured, early stopping (patience=4) on val mean AUC.
-  Best checkpoint at **epoch 7** (val mean AUC 0.8138); training stopped at epoch 11.
-- **Reproducibility:** `torch.manual_seed` + deterministic cuDNN set, in addition to the
-  `np.random.seed` used for the train/val split
-- **Metric:** AUC-ROC per class and mean AUC — correct for severely imbalanced multi-label tasks
+- **Model:** ResNet-18, ImageNet-pretrained, final layer replaced with `Linear(512, 14)`
+- **Output:** 14 independent sigmoids — not softmax, since conditions aren't mutually exclusive
+- **Loss:** `BCEWithLogitsLoss` with per-class `pos_weight`
+- **Augmentation:** horizontal flip only (p=0.5), nothing else. A mirrored chest is
+  still anatomically valid and approximates real variation in patient positioning.
+  Vertical flip or arbitrary rotation would place the heart, gastric bubble, and
+  diaphragm curvature in orientations that never occur in an upright film — the
+  network could end up learning the augmentation artifact instead of the pathology.
+- **Optimiser:** Adam, lr=1e-4, `ReduceLROnPlateau` on val mean AUC (patience=2, factor=0.5)
+- **Split:** official NIH patient-disjoint train/test lists, with train further split
+  90/10 by patient for validation. Train: 77,994 images (25,208 pt) | Val: 8,530
+  (2,800 pt) | Test: 25,596 (2,797 pt). Verified disjoint with an explicit assert
+  (Ablation A below shows what happens without this).
+- **Training:** up to 20 epochs, early stopping (patience=4) on val mean AUC. Best
+  checkpoint at **epoch 6** (val mean AUC 0.8179); training stopped at epoch 10.
+- **Reproducibility:** fixed seeds (`torch.manual_seed`, `np.random.seed`) +
+  deterministic cuDNN. **Verified, not just configured** — the full pipeline was rerun
+  end-to-end and reproduced every reported number (main results, both ablations,
+  per-epoch loss/AUC) to 4 decimal places.
 
-A ResNet-50 run (`nn.Linear(2048, 14)`) is a natural next step but has not been trained —
-everything below reflects the ResNet-18 result that was actually run.
-
-### Training dynamics — not fully resolved
-
-Train loss fell from 0.811 (epoch 7, the checkpoint kept) to 0.559 (epoch 11) while val
-mean AUC did not improve over that span: 0.8138 → 0.7919 → 0.8128 → 0.8055 → 0.8046, net
-negative. That's a genuine, if mild, overfitting signature — the model kept fitting the
-training set after it stopped finding anything generalizable in validation. Early stopping
-mechanically kept the epoch-7 checkpoint, but nothing here actively addressed the pattern:
-no weight decay, no dropout, no additional augmentation was tried to see whether the gap
-could be narrowed.
-
-There's a second problem underneath the first. Epochs 5, 6, 7, and 9 scored 0.8117,
-0.8135, 0.8138, 0.8128 — a spread of 0.0021 across four epochs. The improvement that
-caused epoch 7 to be saved over epoch 6 was 0.0003. Epoch 8 dipped to 0.7919 — about
-0.02 below its neighbours — and fully recovered by epoch 9. That pattern (single-epoch
-swings larger than the margin deciding which checkpoint gets kept) means epoch 7 is not
-demonstrably a stable optimum; it's the highest draw from a plateau of roughly
-equivalent checkpoints, evaluated once each on a single fixed validation set with no
-uncertainty attached. The same reasoning that motivated bootstrap CIs on the test AUC
-below applies here and hasn't been applied.
-
-What this would take to resolve: model selection based on a smoothed multi-epoch average
-or a minimum-improvement threshold rather than a single-epoch maximum; weight decay
-and/or dropout to test whether the train/val gap narrows; and, ideally, repeating training
-across a few different train/val splits to see whether "epoch 7, ~0.814 mean val AUC"
-holds up or was specific to this one split. None of that has been done. The result below
-should be read as a reasonable ResNet-18 baseline, not a tuned optimum.
+**Training dynamics — not fully resolved.** Val AUC plateaus in the 0.80–0.82 range
+from epoch 4 onward, with epoch-to-epoch noise (±0.01–0.02) larger than the margin
+that decided which checkpoint got saved. Read "epoch 6" as *best observed on this
+run*, not a precisely tuned optimum — no weight decay, dropout, or multi-seed
+averaging was used to test whether the plateau narrows.
 
 ---
 
 ## Results
 
-Evaluated on the official patient-disjoint test set (25,596 images, 2,797 patients).
-95% CIs computed via 1000-sample bootstrap resampling of the test set per class.
+Test set: 25,596 images, 2,797 patients, patient-disjoint from train/val.
+95% CIs via 1000-sample bootstrap resampling per class.
 
 | Class | AUC | 95% CI | Test positives |
 |---|---|---|---|
-| Hernia | 0.9029 | [0.860, 0.941] | 86 |
-| Emphysema | 0.8988 | [0.890, 0.909] | 1,093 |
-| Cardiomegaly | 0.8781 | [0.868, 0.887] | 1,065 |
-| Pneumothorax | 0.8452 | [0.838, 0.853] | 2,661 |
-| Edema | 0.8303 | [0.820, 0.842] | 925 |
-| Effusion | 0.8150 | [0.809, 0.822] | 4,648 |
-| Mass | 0.7814 | [0.769, 0.793] | 1,712 |
-| Fibrosis | 0.7798 | [0.759, 0.803] | 435 |
-| Pleural_Thickening | 0.7536 | [0.740, 0.767] | 1,143 |
-| Atelectasis | 0.7486 | [0.740, 0.758] | 3,255 |
-| Consolidation | 0.7246 | [0.714, 0.735] | 1,815 |
-| Nodule | 0.7163 | [0.703, 0.730] | 1,615 |
-| Pneumonia | 0.6982 | [0.675, 0.721] | 477 |
-| Infiltration | 0.6883 | [0.681, 0.695] | 6,088 |
-| **Mean AUC** | **0.7901** | | |
+| Hernia | 0.9189 | [0.880, 0.954] | 86 |
+| Emphysema | 0.8822 | [0.872, 0.893] | 1,093 |
+| Cardiomegaly | 0.8666 | [0.857, 0.877] | 1,065 |
+| Pneumothorax | 0.8339 | [0.826, 0.841] | 2,661 |
+| Edema | 0.8334 | [0.822, 0.844] | 925 |
+| Effusion | 0.8107 | [0.805, 0.817] | 4,648 |
+| Fibrosis | 0.8039 | [0.783, 0.825] | 435 |
+| Mass | 0.7782 | [0.767, 0.788] | 1,712 |
+| Pleural_Thickening | 0.7568 | [0.743, 0.771] | 1,143 |
+| Atelectasis | 0.7499 | [0.741, 0.759] | 3,255 |
+| Consolidation | 0.7242 | [0.714, 0.734] | 1,815 |
+| Nodule | 0.7151 | [0.702, 0.728] | 1,615 |
+| Infiltration | 0.6955 | [0.688, 0.703] | 6,088 |
+| Pneumonia | 0.6806 | [0.657, 0.706] | 477 |
+| **Mean AUC** | **0.7893** | | |
 
-Note the CI width scales with test-set positive count, not just the point estimate —
-Hernia's is nearly 3x wider than Emphysema's despite a similar AUC, because it has ~13x
-fewer positives to estimate from.
+CI width scales with test-set positive count, not just the point estimate — Hernia's
+is ~4x wider than Emphysema's at a similar AUC, because it has ~13x fewer positives.
 
 ### Comparison with published official-split results
 
-Numbers below are compiled from Xiao et al. (2022), *"Delving into Masked Autoencoders
-for Multi-Label Thorax Disease Classification,"* Table 6 (arXiv:2210.12843), which
-itself aggregates results from ~15 published papers on the same official train/test
-split used here.
+Compiled from Xiao et al. (2022), *"Delving into Masked Autoencoders for Multi-Label
+Thorax Disease Classification"* (arXiv:2210.12843), Table 6, which aggregates ~15
+published results on the same official train/test split used here.
 
 | Study | Year | Architecture | Mean AUC |
 |---|---|---|---|
-| Wang et al. (original ChestX-ray14 paper) | 2017 | ResNet-50 | 0.745 |
+| Wang et al. (original ChestX-ray14) | 2017 | ResNet-50 | 0.745 |
 | Yao et al. | 2018 | ResNet + DenseNet | 0.761 |
 | Guendel et al. (DNetLoc, location-aware) | 2018 | DenseNet-121 | 0.807 |
 | Baltruschat et al. | 2019 | ResNet-50 | 0.806 |
 | Liu et al. | 2022 | DenseNet-121 | 0.818 |
-| Best CNN result reported as of 2022 | 2022 | DenseNet-121 | 0.826 |
+| Best CNN result, as of 2022 | 2022 | DenseNet-121 | 0.826 |
 | Xiao et al. (MAE-pretrained) | 2022 | ViT-B/16 | 0.830 |
-| **This project** | 2026 | **ResNet-18** | **0.790** |
+| **This project** | 2026 | **ResNet-18** | **0.789** |
 
-**Interpretation:** this project's result clears the original 2017 baseline —
-which the field has treated as an easy bar to clear for years — and sits in a reasonable
-range for a standard architecture without location-awareness, self-supervised
-pretraining, or other add-ons. It is roughly 3–4 points of mean AUC below the best
-published DenseNet-121/ViT results on this same split. That gap is expected given this
-project doesn't use any of the techniques those papers add — it isn't a surprising or
-notable result in either direction, and shouldn't be presented as one.
+Clears the 2017 baseline the field has used as an easy bar for years, and sits
+roughly 3–4 points below the best published DenseNet-121/ViT results — expected,
+since this project doesn't use location-awareness, self-supervised pretraining, or
+any of the other add-ons those papers use. Not a surprising result in either
+direction.
+
+---
+
+## Ablations
+
+Both run on a reduced subsample (6,000 train / 1,200 val / 1,200 test images) for 5
+epochs — enough to isolate one variable cheaply, not enough to be a tuned result.
+Both are executed in the notebook, not just described.
+
+### Ablation A — does the patient-disjoint split actually matter?
+
+Same pool of images, split two ways: honestly (by patient, matching the main
+pipeline) and naively (by image, ignoring which patient each image belongs to).
+
+**The clean evidence — deterministic, no training noise involved:**
+
+> **454 of 1,200 leaked-split test images (38%) belong to a patient who also has
+> images in the leaked-split train set.** The honest split has zero such overlap by
+> construction (394 patients affected).
+
+**The consequence — mean test AUC:**
+
+| | Honest split | Leaked split |
+|---|---|---|
+| Mean AUC (all 14 classes) | 0.7026 | 0.7299 |
+
+Delta: +0.027. That number is muddier than it looks — Hernia's test subsample had
+only 2 positive images, far too few for a stable AUC estimate, and it swung **−0.31**
+in the *opposite* direction, dragging the naive mean down. Excluding Hernia (and any
+class with <15 test positives): **mean delta +0.054** across the remaining 13 classes,
+12 of which moved in the direction leakage predicts, several substantially
+(Consolidation +0.18, Emphysema +0.12, Pleural_Thickening +0.09).
+
+The patient-overlap count is the number to lead with. It doesn't depend on training
+noise, subsample size, or which epoch got saved — it's just counting.
+
+### Ablation B — does per-class pos_weight actually matter?
+
+Same honest split, same 5 epochs, weighted vs. unweighted `BCEWithLogitsLoss`:
+
+| Class | AUC (weighted) | AUC (unweighted) | Sensitivity@0.5 (weighted) | Sensitivity@0.5 (unweighted) |
+|---|---|---|---|---|
+| Pneumonia | 0.5821 | 0.5263 | 0.1667 | **0.0000** |
+| Fibrosis | 0.7644 | 0.6858 | 0.3600 | **0.0000** |
+| Cardiomegaly | 0.7566 | 0.7205 | 0.4681 | **0.0000** |
+
+Sensitivity@0.5 (fraction of true positives actually flagged at a normal decision
+threshold) hits exactly zero for all three tracked classes without weighting — the
+unweighted model never once flagged a true positive for Pneumonia, Fibrosis, or
+Cardiomegaly at threshold 0.5, despite AUC still looking passable. AUC is
+threshold-independent (rank-based), so it can look reasonable even when the model has
+learned to never actually call anything positive.
+
+AUC also dropped meaningfully unweighted (not just the operating threshold) — under a
+5-epoch budget, the unweighted loss likely gives the model too little gradient signal
+from rare-class examples to learn to rank them well either, not only to threshold them
+well.
 
 ---
 
 ## Grad-CAM Interpretability
 
-A qualitative pass (single highest-confidence true positive per class) was run first,
-then checked quantitatively against NIH's ground-truth bounding boxes using the
-**pointing game** metric (Selvaraju et al.'s own Grad-CAM evaluation): does the heatmap's
-single highest-activation pixel fall inside the true lesion box?
+Checked quantitatively against NIH's ground-truth bounding boxes using the
+**pointing game** metric (Selvaraju et al.'s own Grad-CAM evaluation): does the
+heatmap's single highest-activation pixel fall inside the true lesion box?
 
-**NIH only provides ground-truth boxes for 8 of the 14 classes.** The other six
-(Consolidation, Edema, Emphysema, Fibrosis, Pleural_Thickening, Hernia) cannot be checked
-this way with this dataset — any claim about their localization quality is a qualitative
-impression only, and is kept separate from the measured results below rather than
-presented at the same confidence level.
-
-### Measured (8 classes with ground-truth boxes)
+**NIH only provides ground-truth boxes for 8 of the 14 classes.** The other six can't
+be checked this way with this dataset.
 
 | Class | n boxes | Pointing-game accuracy |
 |---|---|---|
-| Cardiomegaly | 146 | 0.925 |
-| Infiltration | 123 | 0.382 |
-| Pneumonia | 120 | 0.333 |
-| Mass | 85 | 0.318 |
-| Effusion | 153 | 0.222 |
-| Atelectasis | 180 | 0.128 |
-| Pneumothorax | 98 | 0.122 |
-| Nodule | 79 | 0.051 |
+| Cardiomegaly | 146 | 0.959 |
+| Infiltration | 123 | 0.455 |
+| Pneumonia | 120 | 0.442 |
+| Effusion | 153 | 0.333 |
+| Mass | 85 | 0.306 |
+| Atelectasis | 180 | 0.250 |
+| Pneumothorax | 98 | 0.082 |
+| Nodule | 79 | 0.038 |
 
-Reading this: Cardiomegaly is genuinely strong. Everything else the model does at best
-moderately (Infiltration, Pneumonia, Mass — roughly one in three) and at worst close to
-chance for a small target region (Nodule).
+Cardiomegaly is genuinely strong; everything else the model does at best moderately,
+Nodule close to chance for a small target region. Two caveats:
 
-Two separate reasons not to take that ranking at face value yet.
+Pointing-game "chance" scales with box size relative to image area — Cardiomegaly
+boxes are large by definition, Nodule boxes are small (≤3cm clinically). Some of this
+ranking is plausibly box size, not purely localization quality. Not corrected for
+here (would need a box-area-normalized "lift over chance" — the box dimensions are
+already in the data, this just hasn't been computed).
 
-First, specific to Cardiomegaly: Grad-CAM heatmaps have a documented tendency toward
-central activation regardless of the true lesion, and the heart occupies the middle of
-essentially every chest film. Some of the 92.5% may reflect this coincidental spatial
-alignment rather than the model precisely reasoning about cardiac silhouette. It's the
-strongest result here either way, but "strongest" and "fully explained" aren't the
-same claim.
 
-**A more general version of that caveat applies across all 8 classes, not just Cardiomegaly.**
-Pointing game's "chance" hit rate scales with box size relative to image area — a larger
-ground-truth box is easier to hit by construction, regardless of whether the model is
-reasoning about the pathology at all. Cardiomegaly boxes cover a large share of the
-cardiac silhouette; Nodule boxes, by clinical definition ≤3cm, cover very little of a
-full chest film. Nodule being both the smallest-boxed class and the worst score, and
-Cardiomegaly both the largest-boxed and the best, is at least consistent with box size
-doing some of the work here — though the middle of the ranking doesn't track size as
-cleanly, so it isn't a clean confound end to end.
+---
 
-**This hasn't been checked.** The exact ground-truth box dimensions for every test-set
-instance are already present in the data (`bbox_test`'s box coordinates), which would
-give the true chance rate directly — no need to lean on published population-average
-lesion sizes. That comparison (observed pointing-game accuracy against each class's
-mean box-area-to-image-area ratio, i.e. a "lift over chance" figure) hasn't been run.
-Until it is, the ranking above should be read as raw pointing-game accuracy, not as a
-validated statement that Cardiomegaly localizes well and Nodule doesn't — box size alone
-could explain a meaningful part of that gap.
+## Reproducibility
 
-Infiltration's measured pointing-game accuracy (38.2% across 123 images) is moderate,
-not strong. A single qualitative example is not a reliable basis for judging
-localisation quality — this is exactly why the measured, multi-image result is the
-one to trust.
-
-### Unmeasured (6 classes, no ground-truth boxes available)
-
-Qualitative impression only, not verified: Consolidation and Pleural_Thickening appeared,
-on the single example inspected, to activate anatomically plausible regions; Emphysema,
-Fibrosis, Edema, and Hernia were not closely inspected qualitatively. None of this should
-be read with the same confidence as the measured table above.
-
-This general pattern — decent AUC despite frequently poor localisation — is a documented
-property of ChestX-ray14, discussed by Oakden-Rayner (2017):
-https://lukeoakdenrayner.wordpress.com/2017/12/18/the-chestxray14-dataset-problems/
+Given the fixed seeds and deterministic cuDNN settings, rerunning this notebook
+end-to-end reproduces every reported number exactly — this was verified by rerunning
+the full pipeline twice and diffing the outputs, not assumed from the seed
+configuration alone.
 
 ---
 
@@ -373,11 +353,41 @@ grad-cam==1.4.8
 tabulate==0.9.0
 ```
 
+Approximate — not a verified pin of the exact Kaggle session that produced these
+results. For an exact match, `pip freeze` from that session.
+
 ## How to Run
 
-1. Add the [NIH ChestX-ray14 dataset](https://www.kaggle.com/datasets/khanfashee/nih-chest-x-ray-14-224x224-resized) to your Kaggle notebook
-2. Set `MINI_RUN = True` for a fast pipeline check, `False` for the full run reported above
-3. Run all cells top to bottom — the notebook includes training, evaluation, Grad-CAM,
-   bootstrap CIs, subgroup breakdowns, the view-position hypothesis check, and the
-   quantitative Grad-CAM localisation, in one script
-4. The final section prints paste-ready markdown tables matching everything in this README
+1. Add the [NIH ChestX-ray14 dataset](https://www.kaggle.com/datasets/khanfashee/nih-chest-x-ray-14-224x224-resized) to a Kaggle notebook (GPU enabled)
+2. Run all cells top to bottom. `MINI_RUN = True` in the config cell for a fast
+   pipeline check; `False` for the full run reported here
+3. `SKIP_MAIN_TRAINING_IF_CHECKPOINT_EXISTS = True` will load a saved `main_best.pth`
+   instead of retraining, if one exists in the working directory
+4. Ablation cells (13–14) run automatically after the main pipeline — no separate
+   trigger needed
+5. The final cell prints paste-ready markdown tables matching everything above
+
+---
+
+## License
+
+MIT License
+
+Copyright (c) 2026 . Suhaib Shdefat
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
